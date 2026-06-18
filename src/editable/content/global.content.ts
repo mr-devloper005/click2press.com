@@ -8,29 +8,30 @@ export const globalContent = {
     baseUrl: slot4BrandConfig.baseUrl,
   },
   nav: {
-    tagline: 'News, media, and public updates',
+    tagline: 'Media distribution and newsroom visibility',
     primaryLinks: [
-      { label: 'Latest Updates', href: '/updates' },
-      { label: 'News Media', href: '/updates?category=news-media' },
-      { label: 'Press Releases', href: '/updates?category=press-release' },
+      { label: 'Home', href: '/' },
+      { label: 'Media Distribution', href: '/updates' },
+      { label: 'Search', href: '/search' },
+      { label: 'About', href: '/about' },
       { label: 'Contact', href: '/contact' },
     ],
     actions: {
-      primary: { label: 'Browse updates', href: '/updates' },
-      secondary: { label: 'Submit', href: '/contact' },
+      primary: { label: 'Free Consultation', href: '/contact' },
+      secondary: { label: 'Create Release', href: '/create' },
     },
   },
   footer: {
-    tagline: 'Newsroom updates and distributed media',
-    description: 'A flexible media distribution surface for announcements, press coverage, public updates, and dynamic news categories.',
+    tagline: 'Media distribution built for credible public discovery',
+    description: 'A focused distribution surface for press releases, company announcements, campaign news, media coverage, and public updates.',
     columns: [
       {
         title: 'Explore',
         links: [
-          { label: 'Latest Updates', href: '/updates' },
-          { label: 'News Media', href: '/updates?category=news-media' },
-          { label: 'Business News', href: '/updates?category=business' },
+          { label: 'Media Distribution', href: '/updates' },
           { label: 'Press Releases', href: '/updates?category=press-release' },
+          { label: 'Campaign News', href: '/updates?category=campaign' },
+          { label: 'Brand Updates', href: '/updates?category=brand' },
         ],
       },
       {
