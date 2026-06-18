@@ -5,7 +5,7 @@ import { buildTaskMetadata } from '@/lib/seo'
 import { CATEGORY_OPTIONS, normalizeCategory } from '@/lib/categories'
 import { fetchPaginatedTaskPosts, buildPostUrl } from '@/lib/task-data'
 import { getTaskConfig, SITE_CONFIG, type TaskKey } from '@/lib/site-config'
-import type { SiteFeedPagination, SitePost } from '@/lib/site-connector'
+import { fetchSiteFeed, type SiteFeedPagination, type SitePost } from '@/lib/site-connector'
 import { taskPageMetadata } from '@/config/site.content'
 import { taskPageVoices } from '@/editable/content/task-pages.content'
 import { EditableSiteShell } from '@/editable/shell/EditableSiteShell'
@@ -54,6 +54,38 @@ function pageHref(basePath: string, category: string, page: number) {
   return query ? `${basePath}?${query}` : basePath
 }
 
+const editableFallbackPagination = (page: number, limit: number, total: number): SiteFeedPagination => {
+  const totalPages = Math.max(1, Math.ceil(total / limit))
+  return {
+    page,
+    limit,
+    total,
+    totalPages,
+    hasPrevPage: page > 1,
+    hasNextPage: page < totalPages,
+  }
+}
+
+const isVisibleRealPost = (post: SitePost) => {
+  const status = typeof (post as any).status === 'string' ? String((post as any).status).toUpperCase() : ''
+  const type = asText(getContent(post).type).toLowerCase()
+  return (!status || status === 'PUBLISHED') && type !== 'comment'
+}
+
+const editableRealFeedFallback = async (page: number, limit: number, category: string) => {
+  const feed = await fetchSiteFeed<SitePost>(1000, { fresh: true, timeoutMs: 5000 }).catch(() => null)
+  const allPosts = (feed?.posts || []).filter((post) => {
+    if (!isVisibleRealPost(post)) return false
+    if (!category || category === 'all') return true
+    return normalizeCategory(getCategory(post, '')) === category
+  })
+  const start = (page - 1) * limit
+  return {
+    posts: allPosts.slice(start, start + limit),
+    pagination: editableFallbackPagination(page, limit, allPosts.length),
+  }
+}
+
 const taskDeck: Record<TaskKey, { icon: typeof FileText; archiveClass: string; promise: string; badge: string }> = {
   mediaDistribution: { icon: Newspaper, archiveClass: 'grid gap-5 md:grid-cols-2 xl:grid-cols-3', promise: 'Newswire cards prioritize source, category, headline, and publication-ready summaries.', badge: 'News' },
   article: { icon: FileText, archiveClass: 'grid gap-5 md:grid-cols-2 xl:grid-cols-3', promise: 'Readable editorial cards with room for headlines and excerpts.', badge: 'Read' },
@@ -78,7 +110,13 @@ export async function EditableTaskArchiveRoute({
   const page = Math.max(1, Math.floor(Number(resolved.page) || 1))
   const category = resolved.category ? normalizeCategory(resolved.category) : 'all'
   const taskConfig = getTaskConfig(task)
-  const { posts, pagination } = await fetchPaginatedTaskPosts(task, { page, limit: 24, category })
+  const limit = 24
+  const fetched = await fetchPaginatedTaskPosts(task, { page, limit, category })
+  const fallback = task === 'mediaDistribution' && !fetched.posts.length
+    ? await editableRealFeedFallback(page, limit, category)
+    : null
+  const posts = fallback?.posts || fetched.posts
+  const pagination = fallback?.pagination || fetched.pagination
   return <TaskArchiveView task={task} posts={posts} pagination={pagination} category={category} basePath={basePath || taskConfig?.route || `/${task}`} />
 }
 
@@ -100,7 +138,21 @@ export function TaskArchiveView({ task, posts, pagination, category, basePath }:
   ].map((item) => [item.slug, item])).values())
   const categoryLabel = category === 'all' ? 'All categories' : dynamicCategories.find((item) => item.slug === category)?.name || category
 
-  if (task === 'mediaDistribution' || task === 'article') {
+  if (task === 'mediaDistribution') {
+    return (
+      <MediaDistributionArchive
+        posts={posts}
+        pagination={pagination}
+        category={category}
+        categoryLabel={categoryLabel}
+        categories={dynamicCategories}
+        basePath={basePath}
+        label={label}
+      />
+    )
+  }
+
+  if (task === 'article') {
     return (
       <EditorialArchive
         posts={posts}
@@ -161,6 +213,94 @@ export function TaskArchiveView({ task, posts, pagination, category, basePath }:
         </section>
       </main>
     </EditableSiteShell>
+  )
+}
+
+function MediaDistributionArchive({
+  posts,
+  pagination,
+  category,
+  categoryLabel,
+  categories,
+  basePath,
+  label,
+}: {
+  posts: SitePost[]
+  pagination: SiteFeedPagination
+  category: string
+  categoryLabel: string
+  categories: { name: string; slug: string }[]
+  basePath: string
+  label: string
+}) {
+  const page = pagination.page || 1
+  const lead = posts[0]
+  return (
+    <EditableSiteShell>
+      <main className="min-h-screen bg-[var(--slot4-panel-bg)] text-[var(--slot4-page-text)]">
+        <section className="relative min-h-[360px] overflow-hidden bg-[var(--slot4-dark-bg)] text-white">
+          <img src={lead ? getImage(lead) : placeholder} alt="" className="absolute inset-0 h-full w-full object-cover opacity-55" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,18,27,.9),rgba(6,70,83,.62))]" />
+          <div className="relative mx-auto flex min-h-[360px] max-w-[1260px] flex-col justify-center px-4 py-16 sm:px-6 lg:px-8">
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-[var(--slot4-accent)]">Article & News</p>
+            <h1 className="mt-4 text-5xl font-black leading-tight sm:text-6xl">{category === 'all' ? label : categoryLabel}</h1>
+            <p className="mt-5 max-w-2xl text-base font-semibold leading-8 text-white/78">Browse press releases, media announcements, campaign updates, and public distribution posts in one searchable archive.</p>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8">
+          <div className="mb-10 grid gap-5 bg-white p-5 shadow-sm lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="flex flex-wrap gap-3">
+              <Link href={basePath} className={`px-4 py-2 text-xs font-black uppercase tracking-[.14em] ${category === 'all' ? 'bg-[var(--slot4-accent)] text-white' : 'bg-[var(--slot4-panel-bg)]'}`}>All</Link>
+              {categories.slice(0, 8).map((item) => (
+                <Link key={item.slug} href={pageHref(basePath, item.slug, 1)} className={`px-4 py-2 text-xs font-black uppercase tracking-[.14em] ${category === item.slug ? 'bg-[var(--slot4-accent)] text-white' : 'bg-[var(--slot4-panel-bg)]'}`}>{item.name}</Link>
+              ))}
+            </div>
+            <form action={basePath} className="flex bg-[var(--slot4-panel-bg)]">
+              <select name="category" defaultValue={category} className="min-w-0 bg-transparent px-4 py-3 text-sm font-bold outline-none">
+                <option value="all">All categories</option>
+                {categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+              </select>
+              <button className="bg-[var(--slot4-dark-bg)] px-5 text-xs font-black uppercase tracking-[.14em] text-white">Apply</button>
+            </form>
+          </div>
+
+          {posts.length ? (
+            <div className="grid gap-7 md:grid-cols-2 lg:grid-cols-3">
+              {posts.map((post) => <MediaDistributionCard key={post.id || post.slug} post={post} href={`${basePath}/${post.slug}`} />)}
+            </div>
+          ) : (
+            <div className="bg-white p-10 text-center shadow-sm">
+              <Search className="mx-auto h-8 w-8 opacity-45" />
+              <h2 className="mt-4 text-3xl font-black">No media distribution posts found</h2>
+              <p className="mt-2 text-sm opacity-65">Try another category or refresh after publishing new content.</p>
+            </div>
+          )}
+
+          <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
+            {pagination.hasPrevPage ? <Link href={pageHref(basePath, category, page - 1)} className="bg-white px-5 py-3 text-sm font-black">Previous</Link> : null}
+            <span className="bg-[var(--slot4-dark-bg)] px-5 py-3 text-sm font-black text-white">Page {page} of {pagination.totalPages || 1}</span>
+            {pagination.hasNextPage ? <Link href={pageHref(basePath, category, page + 1)} className="bg-white px-5 py-3 text-sm font-black">Next</Link> : null}
+          </div>
+        </section>
+      </main>
+    </EditableSiteShell>
+  )
+}
+
+function MediaDistributionCard({ post, href }: { post: SitePost; href: string }) {
+  return (
+    <Link href={href} className="group block overflow-hidden bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-[0_24px_70px_rgba(6,70,83,.12)]">
+      <div className="relative aspect-[16/11] overflow-hidden bg-[var(--slot4-media-bg)]">
+        <img src={getImage(post)} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+        <span className="absolute right-0 top-0 bg-[var(--slot4-accent)] px-4 py-2 text-xs font-black uppercase tracking-[.12em] text-white">{getCategory(post, 'Media')}</span>
+      </div>
+      <div className="p-6">
+        <h2 className="line-clamp-2 text-2xl font-black leading-tight">{post.title}</h2>
+        <p className="mt-4 line-clamp-3 text-sm leading-7 text-[var(--slot4-muted-text)]">{getSummary(post)}</p>
+        <span className="mt-6 inline-flex items-center gap-2 border-b border-[var(--slot4-dark-bg)] pb-2 text-xs font-black uppercase tracking-[.16em] text-[var(--slot4-dark-bg)]">Read release <ArrowRight className="h-4 w-4" /></span>
+      </div>
+    </Link>
   )
 }
 

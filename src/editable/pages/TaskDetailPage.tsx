@@ -5,7 +5,7 @@ import { ArrowLeft, Bookmark, Building2, Camera, CheckCircle2, Download, Externa
 import { buildPostMetadata, buildTaskMetadata } from '@/lib/seo'
 import { buildPostUrl, fetchArticleComments, fetchTaskPostBySlug, fetchTaskPosts } from '@/lib/task-data'
 import { getTaskConfig, SITE_CONFIG, type TaskKey } from '@/lib/site-config'
-import type { SitePost } from '@/lib/site-connector'
+import { fetchSiteFeed, fetchSitePost, type SitePost } from '@/lib/site-connector'
 import { EditableSiteShell } from '@/editable/shell/EditableSiteShell'
 import { getVisualPreset, visualSystem } from '@/editable/theme/visual-system'
 
@@ -21,7 +21,8 @@ export async function generateEditableDetailMetadata(task: TaskKey, params: Prom
 export async function EditableTaskDetailRoute({ task, params }: { task: TaskKey; params: Promise<{ slug?: string; username?: string }> }) {
   const resolved = await params
   const slug = resolved.slug || resolved.username || ''
-  const post = await fetchTaskPostBySlug(task, slug)
+  const fetchedPost = await fetchTaskPostBySlug(task, slug)
+  const post = fetchedPost || (task === 'mediaDistribution' ? await fetchEditableRealPostBySlug(slug) : null)
   if (!post) notFound()
   const related = (await fetchTaskPosts(task, 7)).filter((item) => item.slug !== post.slug).slice(0, 4)
   const comments = task === 'article' || task === 'mediaDistribution' ? await fetchArticleComments(post.slug, 50) : []
@@ -31,6 +32,21 @@ export async function EditableTaskDetailRoute({ task, params }: { task: TaskKey;
 const getContent = (post: SitePost) => post.content && typeof post.content === 'object' ? post.content as Record<string, unknown> : {}
 const asText = (value: unknown) => typeof value === 'string' ? value.trim() : ''
 const isUrl = (value: string) => value.startsWith('/') || /^https?:\/\//i.test(value)
+
+const isVisibleRealPost = (post: SitePost) => {
+  const status = typeof (post as any).status === 'string' ? String((post as any).status).toUpperCase() : ''
+  const type = asText(getContent(post).type).toLowerCase()
+  return (!status || status === 'PUBLISHED') && type !== 'comment'
+}
+
+const fetchEditableRealPostBySlug = async (slug: string) => {
+  const safeSlug = String(slug || '').trim()
+  if (!safeSlug) return null
+  const direct = await fetchSitePost<SitePost>(safeSlug, { fresh: true, timeoutMs: 5000 }).catch(() => null)
+  if (direct?.post && isVisibleRealPost(direct.post)) return direct.post
+  const feed = await fetchSiteFeed<SitePost>(1000, { fresh: true, timeoutMs: 5000 }).catch(() => null)
+  return (feed?.posts || []).find((post) => post.slug === safeSlug && isVisibleRealPost(post)) || null
+}
 
 const getField = (post: SitePost, keys: string[]) => {
   const content = getContent(post)
@@ -133,6 +149,7 @@ function BackLink({ task }: { task: TaskKey }) {
 }
 
 function ArticleDetail({ task, post, related, comments }: { task: TaskKey; post: SitePost; related: SitePost[]; comments: Array<{ id: string; name: string; comment: string; createdAt: string }> }) {
+  if (task === 'mediaDistribution') return <MediaDistributionDetail post={post} related={related} comments={comments} />
   const images = getImages(post)
   const published = post.publishedAt ? new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''
   return (
@@ -164,6 +181,43 @@ function ArticleDetail({ task, post, related, comments }: { task: TaskKey; post:
         <div className="border-t-4 border-[#c92f2f] pt-5">
           <RelatedPanel task={task} post={post} related={related} />
         </div>
+      </div>
+    </section>
+  )
+}
+
+function MediaDistributionDetail({ post, related, comments }: { post: SitePost; related: SitePost[]; comments: Array<{ id: string; name: string; comment: string; createdAt: string }> }) {
+  const images = getImages(post)
+  return (
+    <section className="bg-white text-[var(--slot4-page-text)]">
+      <header className="relative min-h-[480px] overflow-hidden bg-[var(--slot4-dark-bg)] text-white">
+        {images[0] ? <img src={images[0]} alt="" className="absolute inset-0 h-full w-full object-cover opacity-58" /> : null}
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,18,27,.9),rgba(6,70,83,.62),rgba(4,18,27,.24))]" />
+        <div className="relative mx-auto flex min-h-[480px] max-w-[1260px] flex-col justify-center px-4 py-16 sm:px-6 lg:px-8">
+          <BackLink task="mediaDistribution" />
+          <span className="mt-10 w-fit bg-[var(--slot4-accent)] px-4 py-2 text-xs font-black uppercase tracking-[.16em]">{categoryOf(post, 'Media Distribution')}</span>
+          <h1 className="mt-6 max-w-5xl text-5xl font-black leading-tight sm:text-6xl">{post.title}</h1>
+        </div>
+      </header>
+
+      <div className="mx-auto grid max-w-[1260px] gap-12 px-4 py-14 sm:px-6 lg:grid-cols-[minmax(0,820px)_340px] lg:px-8 lg:py-20">
+        <article className="min-w-0">
+          <BodyContent post={post} />
+          {images.length > 1 ? <ImageStrip images={images.slice(1)} label="Media assets" /> : null}
+          <EditableComments slug={post.slug} comments={comments} />
+        </article>
+        <aside className="space-y-6">
+          <div className="bg-[var(--slot4-panel-bg)] p-7">
+            <p className="text-xs font-black uppercase tracking-[.22em] text-[var(--slot4-accent)]">Distribution support</p>
+            <h2 className="mt-4 text-3xl font-black leading-tight">Need more help?</h2>
+            <p className="mt-4 text-sm leading-7 text-[var(--slot4-muted-text)]">Contact the team for release corrections, publishing assistance, campaign routing, or media distribution support.</p>
+            <div className="mt-6 grid gap-3">
+              <Link href="/contact" className="bg-[var(--slot4-dark-bg)] px-5 py-3 text-center text-xs font-black uppercase tracking-[.14em] text-white">Customer Support</Link>
+              <Link href="/create" className="bg-[var(--slot4-accent)] px-5 py-3 text-center text-xs font-black uppercase tracking-[.14em] text-white">Create release</Link>
+            </div>
+          </div>
+          <RelatedPanel task="mediaDistribution" post={post} related={related} compact />
+        </aside>
       </div>
     </section>
   )

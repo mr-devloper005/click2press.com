@@ -55,15 +55,14 @@ export function EditorialFeatureCard({ post, href, label = 'Cover story' }: { po
 
 export function RailPostCard({ post, href, index }: { post: SitePost; href: string; index: number }) {
   return (
-    <Link href={href} className={`group ${dc.layout.minRailCard} block border-t-4 border-black bg-[var(--slot4-surface-bg)] ${dc.motion.lift}`}>
-      <div className="relative aspect-[4/3] overflow-hidden bg-[var(--slot4-media-bg)]">
-        <img src={getEditablePostImage(post)} alt={post.title} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-      </div>
-      <div className="p-4">
+    <Link href={href} className={`group ${dc.layout.minRailCard} block min-h-[260px] border-t-4 border-[var(--slot4-accent)] bg-[var(--slot4-surface-bg)] p-5 shadow-sm ${dc.motion.lift}`}>
+      <div className="flex h-full flex-col">
         <div className="flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-[.18em] text-[var(--slot4-accent)]">
           <span>{getEditableCategory(post)}</span><span>{String(index + 1).padStart(2, '0')}</span>
         </div>
-        <h3 className="mt-3 line-clamp-3 text-xl font-black leading-[1.02] tracking-[-.04em]">{post.title}</h3>
+        <h3 className="mt-5 line-clamp-3 text-xl font-black leading-tight">{post.title}</h3>
+        <p className="mt-4 line-clamp-5 text-sm leading-7 text-[var(--slot4-muted-text)]">{getEditableExcerpt(post, 180)}</p>
+        <span className="mt-auto inline-flex pt-6 text-xs font-black uppercase tracking-[.14em] text-[var(--slot4-dark-bg)] group-hover:text-[var(--slot4-accent)]">Read update</span>
       </div>
     </Link>
   )
